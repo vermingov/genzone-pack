@@ -1,0 +1,25 @@
+name: yt-dlp feasibility
+on: workflow_dispatch
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        client: [default, "tv", "web_safari", "mweb", "android_vr", "ios", "tv_embedded"]
+    steps:
+      - run: |
+          sudo apt-get -qq update && sudo apt-get -qq install -y ffmpeg >/dev/null
+          python3 -m pip install -q -U "yt-dlp[default]"
+          yt-dlp --version
+      - name: download
+        run: |
+          URL="https://www.youtube.com/watch?v=aqz-KE-bpKQ"
+          ARGS=()
+          if [ "${{ matrix.client }}" != "default" ]; then ARGS+=(--extractor-args "youtube:player_client=${{ matrix.client }}"); fi
+          yt-dlp "${ARGS[@]}" -f bestaudio --no-playlist --print "%(title)s | %(duration)s | %(is_live)s" --no-simulate \
+            --download-sections "*0-30" -o "out.%(ext)s" "$URL"
+          ls -la
+          ffprobe -hide_banner out.* 2>&1 | tail -3
