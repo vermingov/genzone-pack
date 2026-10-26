@@ -1,38 +1,27 @@
+# Feasibility probe for GenZone-Music: can a GitHub-hosted runner download YouTube audio?
+# Result 2026-10-26 without cookies: every player client (default, web, web_safari, web_embedded, mweb, tv,
+# tv_simply, tv_embedded, ios, android_vr), with and without a bgutil PO-token provider: "Sign in to confirm you're
+# not a bot". SoundCloud works. Re-run after adding the repo secret YT_COOKIES (Netscape cookies.txt) to test cookies.
 name: yt-dlp feasibility
 on: workflow_dispatch
 permissions:
   contents: read
 jobs:
-  potoken:
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    services:
-      bgutil:
-        image: brainicism/bgutil-ytdlp-pot-provider
-        ports: ["4416:4416"]
-    steps:
-      - uses: denoland/setup-deno@v2
-        with: {deno-version: v2.x}
-      - run: python3 -m pip install -q -U "yt-dlp[default]" bgutil-ytdlp-pot-provider && yt-dlp --version
-      - run: |
-          for c in default web mweb tv; do
-            for URL in "https://www.youtube.com/watch?v=aqz-KE-bpKQ" "https://www.youtube.com/watch?v=YE7VzlLtp-4"; do
-              ARGS=(--extractor-args "youtubepot-bgutilhttp:base_url=http://127.0.0.1:4416")
-              [ "$c" != default ] && ARGS+=(--extractor-args "youtube:player_client=$c")
-              yt-dlp -v "${ARGS[@]}" -f "bestaudio/best" --print "RESULT OK[$c] %(title)s | %(duration)s" --no-simulate --max-filesize 40M -o "o.%(ext)s" "$URL" > out.txt 2>&1 || true
-              grep -E "bgutil:http|PO Token|po_token" out.txt | grep -v "Script path" | head -3
-              grep -E "^RESULT|^ERROR" out.txt | sed "s/^ERROR/RESULT FAIL[$c]/" | cut -c1-160
-            done
-          done
-  other:
+  probe:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
       - uses: denoland/setup-deno@v2
         with: {deno-version: v2.x}
-      - run: python3 -m pip install -q -U "yt-dlp[default]"
-      - run: |
-          for URL in "https://soundcloud.com/forss/flickermood" "https://archive.org/details/club-diver"; do
-            yt-dlp -f "bestaudio/best" --print "RESULT OK %(extractor)s %(title)s | %(duration)s" --no-simulate --max-filesize 60M -o "o-%(id)s.%(ext)s" "$URL" > out.txt 2>&1 || true
+      - run: python3 -m pip install -q -U "yt-dlp[default]" && yt-dlp --version
+      - name: download (cookies from the YT_COOKIES secret when it is set)
+        env:
+          YT_COOKIES: ${{ secrets.YT_COOKIES }}
+        run: |
+          ARGS=()
+          if [ -n "$YT_COOKIES" ]; then printf '%s\n' "$YT_COOKIES" > "$RUNNER_TEMP/cookies.txt"; ARGS+=(--cookies "$RUNNER_TEMP/cookies.txt"); echo "using cookies"; fi
+          for URL in "https://www.youtube.com/watch?v=aqz-KE-bpKQ" "https://www.youtube.com/watch?v=YE7VzlLtp-4" "https://soundcloud.com/forss/flickermood"; do
+            yt-dlp "${ARGS[@]}" -f "bestaudio/best" --print "RESULT OK %(extractor)s %(title)s | %(duration)s" --no-simulate --max-filesize 60M -o "o-%(id)s.%(ext)s" "$URL" > out.txt 2>&1 || true
             grep -E "^RESULT|^ERROR" out.txt | sed "s/^ERROR/RESULT FAIL/" | cut -c1-160
           done
+          rm -f "$RUNNER_TEMP/cookies.txt"
