@@ -3,27 +3,32 @@ on: workflow_dispatch
 permissions:
   contents: read
 jobs:
-  probe:
+  potoken:
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    strategy:
-      fail-fast: false
-      matrix:
-        client: [default, "tv", "web_safari", "web", "web_embedded", "tv_simply", "default,tv"]
-        attempt: [1, 2]
+    services:
+      bgutil:
+        image: brainicism/bgutil-ytdlp-pot-provider
+        ports: ["4416:4416"]
     steps:
       - uses: denoland/setup-deno@v2
-        with:
-          deno-version: v2.x
+        with: {deno-version: v2.x}
+      - run: python3 -m pip install -q -U "yt-dlp[default]" bgutil-ytdlp-pot-provider && yt-dlp --version
       - run: |
-          python3 -m pip install -q -U "yt-dlp[default]"
-          yt-dlp --version; deno --version | head -1
-      - name: download
-        run: |
-          for URL in "https://www.youtube.com/watch?v=aqz-KE-bpKQ" "https://www.youtube.com/watch?v=YE7VzlLtp-4"; do
-            ARGS=()
-            if [ "${{ matrix.client }}" != "default" ]; then ARGS+=(--extractor-args "youtube:player_client=${{ matrix.client }}"); fi
-            yt-dlp "${ARGS[@]}" -f "bestaudio/best" --no-playlist --print "OK %(title)s | %(duration)s | %(format_id)s %(acodec)s" --no-simulate \
-              --max-filesize 40M -o "out-%(id)s.%(ext)s" "$URL" || echo "FAILED $URL"
+          for c in default web mweb tv; do
+            for URL in "https://www.youtube.com/watch?v=aqz-KE-bpKQ" "https://www.youtube.com/watch?v=YE7VzlLtp-4"; do
+              ARGS=(); [ "$c" != default ] && ARGS+=(--extractor-args "youtube:player_client=$c")
+              yt-dlp -v "${ARGS[@]}" -f "bestaudio/best" --print "OK[$c] %(title)s | %(duration)s" --no-simulate --max-filesize 40M -o "o.%(ext)s" "$URL" 2>&1 | grep -iE "^OK|ERROR|pot|bgutil" | head -5 || true
+            done
           done
-          ls -la out-* || true
+  other:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: denoland/setup-deno@v2
+        with: {deno-version: v2.x}
+      - run: python3 -m pip install -q -U "yt-dlp[default]"
+      - run: |
+          for URL in "https://soundcloud.com/kevinmacleod/monkeys-spinning-monkeys" "https://archive.org/details/Kevin_MacLeod_-_Monkeys_Spinning_Monkeys" "https://upload.wikimedia.org/wikipedia/commons/c/c8/Example.ogg" "https://vimeo.com/76979871"; do
+            yt-dlp -f "bestaudio/best" --print "OK %(extractor)s %(title)s | %(duration)s" --no-simulate --max-filesize 60M -o "o-%(id)s.%(ext)s" "$URL" 2>&1 | grep -E "^OK|ERROR" | head -3 || echo "FAILED $URL"
+          done
