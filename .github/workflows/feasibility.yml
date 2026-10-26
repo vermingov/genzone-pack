@@ -5,21 +5,25 @@ permissions:
 jobs:
   probe:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     strategy:
       fail-fast: false
       matrix:
-        client: [default, "tv", "web_safari", "mweb", "android_vr", "ios", "tv_embedded"]
+        client: [default, "tv", "web_safari", "web", "web_embedded", "tv_simply", "default,tv"]
+        attempt: [1, 2]
     steps:
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
       - run: |
-          sudo apt-get -qq update && sudo apt-get -qq install -y ffmpeg >/dev/null
           python3 -m pip install -q -U "yt-dlp[default]"
-          yt-dlp --version
+          yt-dlp --version; deno --version | head -1
       - name: download
         run: |
-          URL="https://www.youtube.com/watch?v=aqz-KE-bpKQ"
-          ARGS=()
-          if [ "${{ matrix.client }}" != "default" ]; then ARGS+=(--extractor-args "youtube:player_client=${{ matrix.client }}"); fi
-          yt-dlp "${ARGS[@]}" -f bestaudio --no-playlist --print "%(title)s | %(duration)s | %(is_live)s" --no-simulate \
-            --download-sections "*0-30" -o "out.%(ext)s" "$URL"
-          ls -la
-          ffprobe -hide_banner out.* 2>&1 | tail -3
+          for URL in "https://www.youtube.com/watch?v=aqz-KE-bpKQ" "https://www.youtube.com/watch?v=YE7VzlLtp-4"; do
+            ARGS=()
+            if [ "${{ matrix.client }}" != "default" ]; then ARGS+=(--extractor-args "youtube:player_client=${{ matrix.client }}"); fi
+            yt-dlp "${ARGS[@]}" -f "bestaudio/best" --no-playlist --print "OK %(title)s | %(duration)s | %(format_id)s %(acodec)s" --no-simulate \
+              --max-filesize 40M -o "out-%(id)s.%(ext)s" "$URL" || echo "FAILED $URL"
+          done
+          ls -la out-* || true
